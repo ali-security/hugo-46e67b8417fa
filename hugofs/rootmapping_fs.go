@@ -66,6 +66,19 @@ func NewRootMappingFs(fs afero.Fs, rms ...RootMapping) (*RootMappingFs, error) {
 			panic(fmt.Sprintf("invalid root mapping; from/to: %s/%s", rm.From, rm.To))
 		}
 
+		// Don't allow a symlinked mount root (or any directory between it and
+		// the module root) to escape the module. The main project is exempt;
+		// its mount sources may be absolute, so a symlink gains nothing.
+		if !rm.IsProject {
+			symlink, err := isSymlinkOrHasSymlinkParent(fs, rm.ToBase, rm.To)
+			if err != nil {
+				return nil, err
+			}
+			if symlink {
+				continue
+			}
+		}
+
 		fi, err := fs.Stat(rm.To)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -643,6 +656,13 @@ func (rfs *RootMappingFs) collectDirEntries(prefix string) ([]iofs.DirEntry, err
 			if rm.fi.IsDir() {
 				fi, err := rm.fi.Meta().JoinStat(subdir)
 				if err == nil {
+					symlink, err := isSymlinkOrHasSymlinkParent(rfs.Fs, rm.To, fi.Meta().Filename)
+					if err != nil {
+						return nil, err
+					}
+					if symlink {
+						continue
+					}
 					if err := collectDir(rm, fi); err != nil {
 						return nil, err
 					}
