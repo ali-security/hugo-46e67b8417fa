@@ -443,3 +443,33 @@ func main() {}
 		`href="#z&#34;&gt;&lt;script&gt;alert(1)&lt;/script&gt;-1"`,
 	)
 }
+
+func TestCodeblockAttributeValueEscape(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+-- layouts/single.html --
+{{ .Content }}
+-- content/p1.md --
+---
+title: "p1"
+---
+
+§§§bash { title="x\" onmouseover=\"alert(1)" }
+echo "hello";
+§§§
+
+§§§bash { class="x\" onmouseover=\"alert(2)" }
+echo "hello";
+§§§
+`
+
+	b := hugolib.Test(t, files)
+
+	b.AssertFileContent("public/p1/index.html",
+		`! onmouseover="alert`,
+		"&#34; onmouseover=&#34;alert(2)",
+		"&quot; onmouseover=&quot;alert(1)",
+	)
+}
