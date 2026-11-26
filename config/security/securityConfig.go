@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/netip"
 	"reflect"
 	"slices"
 	"strings"
@@ -50,7 +52,12 @@ var DefaultConfig = Config{
 		Getenv: MustNewWhitelist("^HUGO_", "^CI$"),
 	},
 	HTTP: HTTP{
-		URLs:    MustNewWhitelist(".*"),
+		URLs: MustNewWhitelist(
+			`(?i)^https?://[a-z0-9]`,
+			`! (?i)^https?://\d+\.`,
+			`! (?i)localhost`,
+			`! (?i)^https?://[^/?#]*@`,
+		),
 		Methods: MustNewWhitelist("(?i)GET|POST"),
 	},
 	Node: Node{
@@ -189,6 +196,68 @@ func (c Config) CheckAllowedHTTPURL(url string) error {
 		}
 	}
 	return nil
+}
+
+func (c Config) CheckAllowedHTTPAddress(network, address string) error {
+	if !slices.Equal(c.HTTP.URLs.patternsStrings, DefaultConfig.HTTP.URLs.patternsStrings) {
+		return nil
+	}
+	deny := func(name string) error {
+		return &AccessDeniedError{
+			name:     name,
+			path:     "security.http.urls",
+			policies: c.ToTOML(),
+		}
+	}
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return deny(address)
+	}
+	if !isPublicAddr(ip) {
+		return deny(host)
+	}
+	return nil
+}
+
+var nonPublicPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("3fff::/20"),
+	netip.MustParsePrefix("2001:2::/48"),
+}
+
+var nat64Prefixes = []netip.Prefix{
+	netip.MustParsePrefix("64:ff9b::/96"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+}
+
+func isPublicAddr(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	for _, p := range nat64Prefixes {
+		if p.Contains(ip) {
+			b := ip.As16()
+			return isPublicAddr(netip.AddrFrom4([4]byte(b[12:])))
+		}
+	}
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() {
+		return false
+	}
+	for _, p := range nonPublicPrefixes {
+		if p.Contains(ip) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c Config) CheckAllowedHTTPMethod(method string) error {

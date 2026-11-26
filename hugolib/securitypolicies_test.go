@@ -53,6 +53,8 @@ func TestSecurityPolicies(t *testing.T) {
 			b.WithTemplatesAdded("index.html", fmt.Sprintf(templ, ts.URL))
 			if withBuilder != nil {
 				withBuilder(b)
+			} else {
+				b.WithConfigFile("toml", "[security.http]\nurls = ['.*']\n")
 			}
 		}
 		testVariant(c, cb, expectErr)
@@ -425,11 +427,23 @@ urls="none"
 			})
 	})
 
+	c.Run("resources.GetRemote, denied loopback URL by default", func(c *qt.C) {
+		c.Parallel()
+		httpTestVariant(c, `{{ $json := resources.GetRemote "%[1]s/fruits.json" }}{{ $json.Content }}`, `(?s).*is not whitelisted in policy "security\.http\.urls".*`,
+			func(b *sitesBuilder) {
+				b.WithConfigFile("toml", `
+`)
+			})
+	})
+
 	c.Run("resources.GetRemote, fake JSON", func(c *qt.C) {
 		c.Parallel()
 		httpTestVariant(c, `{{ $json := resources.GetRemote "%[1]s/fakejson.json" }}{{ $json.Content }}`, `(?s).*failed to resolve media type.*`,
 			func(b *sitesBuilder) {
 				b.WithConfigFile("toml", `
+[security]
+[security.http]
+urls = ['.*']
 `)
 			})
 	})
@@ -441,6 +455,7 @@ urls="none"
 				b.WithConfigFile("toml", `
 [security]
 [security.http]
+urls = ['.*']
 mediaTypes=["application/json"]
 
 `)

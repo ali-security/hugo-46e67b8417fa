@@ -135,7 +135,7 @@ func TestToTOML(t *testing.T) {
 	got := DefaultConfig.ToTOML()
 
 	c.Assert(got, qt.Equals,
-		"[security]\n  allowContent = ['! ^text/html$', '! ^text/org$']\n  enableInlineShortcodes = false\n\n  [security.exec]\n    allow = ['^(dart-)?sass(-embedded)?$', '^go$', '^git$', '^node$', '^postcss$']\n    osEnv = ['(?i)^((HTTPS?|NO)_PROXY|PATH(EXT)?|APPDATA|TE?MP|TERM|GO\\w+|(XDG_CONFIG_)?HOME|USERPROFILE|SSH_AUTH_SOCK|DISPLAY|LANG|SYSTEMDRIVE)$']\n\n  [security.funcs]\n    getenv = ['^HUGO_', '^CI$']\n\n  [security.http]\n    methods = ['(?i)GET|POST']\n    urls = ['.*']\n\n  [security.node]\n    [security.node.permissions]\n      allowAddons = ['tailwindcss']\n      allowChildProcess = ['tailwindcss']\n      allowRead = ['.']\n      allowWorker = ['tailwindcss']\n      allowWrite = []\n      disable = false",
+		"[security]\n  allowContent = ['! ^text/html$', '! ^text/org$']\n  enableInlineShortcodes = false\n\n  [security.exec]\n    allow = ['^(dart-)?sass(-embedded)?$', '^go$', '^git$', '^node$', '^postcss$']\n    osEnv = ['(?i)^((HTTPS?|NO)_PROXY|PATH(EXT)?|APPDATA|TE?MP|TERM|GO\\w+|(XDG_CONFIG_)?HOME|USERPROFILE|SSH_AUTH_SOCK|DISPLAY|LANG|SYSTEMDRIVE)$']\n\n  [security.funcs]\n    getenv = ['^HUGO_', '^CI$']\n\n  [security.http]\n    methods = ['(?i)GET|POST']\n    urls = ['(?i)^https?://[a-z0-9]', '! (?i)^https?://\\d+\\.', '! (?i)localhost', '! (?i)^https?://[^/?#]*@']\n\n  [security.node]\n    [security.node.permissions]\n      allowAddons = ['tailwindcss']\n      allowChildProcess = ['tailwindcss']\n      allowRead = ['.']\n      allowWorker = ['tailwindcss']\n      allowWrite = []\n      disable = false",
 	)
 }
 
@@ -266,4 +266,52 @@ allowWrite = ["*"]
 		c.Assert(pc.Node.Permissions.IsEnabled(), qt.IsTrue)
 		c.Assert(pc.Node.Permissions.AllowRead, qt.DeepEquals, []string{"*"})
 	})
+}
+
+func TestCheckAllowedHTTPAddress(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	pc := DefaultConfig
+
+	for _, addr := range []string{
+		"93.184.216.34:80",
+		"[2606:4700::1]:443",
+		"[64:ff9b::5db8:d822]:80",
+	} {
+		c.Assert(pc.CheckAllowedHTTPAddress("tcp", addr), qt.IsNil, qt.Commentf(addr))
+	}
+
+	for _, addr := range []string{
+		"127.0.0.1:80",
+		"[::1]:80",
+		"10.0.0.1:8080",
+		"172.16.0.1:80",
+		"192.168.1.1:80",
+		"169.254.169.254:80",
+		"[fe80::1]:80",
+		"[fc00::1]:80",
+		"0.0.0.0:80",
+		"[::ffff:127.0.0.1]:80",
+		"100.64.0.1:80",
+		"[::ffff:100.64.0.1]:80",
+		"192.0.0.9:80",
+		"192.0.2.1:80",
+		"198.18.0.1:80",
+		"198.51.100.1:80",
+		"203.0.113.1:80",
+		"240.0.0.1:80",
+		"[2001:db8::1]:443",
+		"[3fff::1]:443",
+		"[64:ff9b::7f00:1]:80",
+		"[64:ff9b::a9fe:a9fe]:80",
+		"[64:ff9b:1::a00:1]:80",
+	} {
+		err := pc.CheckAllowedHTTPAddress("tcp", addr)
+		c.Assert(err, qt.IsNotNil, qt.Commentf(addr))
+		c.Assert(err, qt.ErrorMatches, `(?s).*is not whitelisted in policy "security\.http\.urls".*`, qt.Commentf(addr))
+	}
+
+	custom := DefaultConfig
+	custom.HTTP.URLs = MustNewWhitelist(".*")
+	c.Assert(custom.CheckAllowedHTTPAddress("tcp", "127.0.0.1:80"), qt.IsNil)
 }

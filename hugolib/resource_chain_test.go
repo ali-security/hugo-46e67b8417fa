@@ -50,6 +50,7 @@ func TestResourceChainBasic(t *testing.T) {
 	})
 
 	b := newTestSitesBuilder(t)
+	b.WithConfigFile("toml", "baseURL = \"http://example.com/\"\n[security.http]\nurls = ['.*']\n")
 	b.WithTemplatesAdded("index.html", fmt.Sprintf(`
 {{ $hello := "<h1>     Hello World!   </h1>" | resources.FromString "hello.html" | fingerprint "sha512" | minify  | fingerprint }}
 {{ $cssFingerprinted1 := "body {  background-color: lightblue; }" | resources.FromString "styles.css" |  minify  | fingerprint }}
@@ -356,7 +357,9 @@ T6: {{ $bundle1.Permalink }}
 		}},
 
 		{"minify", func() bool { return true }, func(b *sitesBuilder) {
-			b.WithConfigFile("toml", `[minify]
+			b.WithConfigFile("toml", `[security.http]
+urls = ['.*']
+[minify]
   [minify.tdewolff]
     [minify.tdewolff.html]
       keepWhitespace = false
@@ -393,6 +396,7 @@ Min HTML Remote: {{ ( resources.GetRemote "%[1]s/mydata/html1.html" | resources.
 		}},
 
 		{"remote", func() bool { return true }, func(b *sitesBuilder) {
+			b.WithConfigFile("toml", "[security.http]\nurls = ['.*']\n")
 			b.WithTemplates("home.html", fmt.Sprintf(`
 {{$js := resources.GetRemote "%[1]s/js/script1.js" }}
 Remote Filename: {{ $js.RelPermalink }}
